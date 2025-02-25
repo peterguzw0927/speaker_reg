@@ -70,17 +70,25 @@ def compute_frame_log_likelihood_(gmm, file_path, scaler, sr=16000):
 
     for start in range(0, len(audio) - frame_length + 1, hop_length):
         frame = audio[start: start + frame_length]
-        mfcc = librosa.feature.mfcc(y=frame, sr=sr,n_fft=512,win_length=320,hop_length=160 ,n_mels=128, n_mfcc=20).T
+        frame_energy = librosa.feature.rms(y=frame, frame_length=320, hop_length=160)[0]
+        energy_threshold = np.percentile(frame_energy, 30)  # Keep top 70% energy
+        high_energy_frame_indices = frame_energy > energy_threshold
+        frame_samples = np.arange(0, len(audio), hop_length)
+        
+        high_energy_audio = []
+        
+        for i in range(len(frame_samples)):
+            if high_energy_frame_indices[i]:
+                start = frame_samples[i]
+                end = start + frame_length  # Frame length
+                high_energy_audio.extend(audio[start:end])
+        
+        high_energy_audio = np.array(high_energy_audio)
+        mfcc = librosa.feature.mfcc(y=high_energy_audio, sr=sr,n_fft=512,win_length=320,hop_length=160 ,n_mels=128, n_mfcc=20).T
         mfcc_scaled = scaler.transform(mfcc)
         log_likelihoods.append(gmm.score(mfcc_scaled))
 
     return np.array(log_likelihoods)  # Return an array of log-likelihoods
-
-def runningMeanFast(x, N):
-    return np.convolve(x, np.ones(N)/N, mode='valid')
-
-def runningMedianManual(x, N):
-    return np.array([np.median(x[i:i+N]) for i in range(len(x) - N + 1)])
 
 def is_enrolled_speaker(likelihoods_enroll, likelihoods_test, threshold_factor=6):
     mean_enroll = np.mean(likelihoods_enroll)
